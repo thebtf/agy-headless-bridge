@@ -1,0 +1,25 @@
+name: publish to MCP Registry
+
+# Standalone, re-runnable publish of server.json to the official MCP Registry
+# via GitHub OIDC (no stored token). Checks out the latest default branch, so
+# server.json edits land without cutting a new release. The PyPI package +
+# mcp-name ownership token must already be live.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+      - name: Authenticate (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish
