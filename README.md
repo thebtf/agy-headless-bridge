@@ -7,6 +7,7 @@
 Codename **PtyGravity** · pty + antiGravity
 
 [![PyPI](https://img.shields.io/pypi/v/agy-headless-bridge.svg?color=7c5cff)](https://pypi.org/project/agy-headless-bridge/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/agy-headless-bridge.svg?color=22d3ee)](https://pypi.org/project/agy-headless-bridge/)
 [![tests](https://github.com/rhishi99/agy-headless-bridge/actions/workflows/test.yml/badge.svg)](https://github.com/rhishi99/agy-headless-bridge/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-7c5cff.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-22d3ee.svg)](https://www.python.org)
@@ -50,9 +51,14 @@ flowchart TB
 ```
 
 ```python
+# ❌ The problem — plain subprocess
+import subprocess
+r = subprocess.run(["agy", "-p", "say hi"], capture_output=True, text=True)
+print(r.stdout)          # '' — prints nothing, exit 0
+
+# ✅ The fix
 from agy_headless_bridge import run
-print(run("Explain a closure in one line."))
-# -> A closure is a function that remembers variables from the scope where it was defined.
+print(run("say hi"))     # 'Hi! How can I help?'
 ```
 
 Three entry points around one core:
@@ -100,7 +106,13 @@ flowchart TD
 | Platform | pty backend | Status |
 |---|---|---|
 | **Windows** | ConPTY via [`pywinpty`] (`PtyProcess`) | ✅ verified (agy 1.0.6) |
-| **Linux / macOS** | stdlib [`pty`] (`os.openpty` + `subprocess.Popen`) | 🧪 implemented, **untested** — [report results / issues here](https://github.com/rhishi99/agy-headless-bridge/issues/new) (include OS, Python + agy version, and full stderr) |
+| **Linux / macOS** | stdlib [`pty`] (`os.openpty` + `subprocess.Popen`) | 🧪 pty mechanics **verified on Linux CI** (stub-driven); **real `agy` round-trip untested on hardware** — [report results here](https://github.com/rhishi99/agy-headless-bridge/issues/new/choose) |
+
+> [!TIP]
+> **POSIX (macOS & Linux) users wanted.** The pty mechanics are verified on
+> Linux CI, but the real `agy` round-trip on POSIX hasn't been run on hardware.
+> If you're on macOS/Linux: `pip install agy-headless-bridge`, try it, and
+> [tell us how it went](https://github.com/rhishi99/agy-headless-bridge/issues/new/choose) — pass or fail. PRs welcome.
 
 > **Why not just the existing `agy` Claude Code plugins?** They wrap `agy` for
 > *triggering* (slash commands, model selection) but still call `agy -p`

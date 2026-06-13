@@ -7,6 +7,8 @@ not installed/authenticated, so CI without Antigravity still passes.
 """
 
 import os
+import sys
+import textwrap
 
 import pytest
 
@@ -54,6 +56,42 @@ def test_run_raises_when_agy_missing(monkeypatch):
     monkeypatch.setattr(bridge, "find_agy", lambda: None)
     with pytest.raises(bridge.AgyNotFoundError):
         bridge.run("hello")
+
+
+# --- pty mechanics (no agy needed; runs on every CI runner) ---------------
+
+# A stand-in for `agy`: it prints its payload ONLY when stdout is a real tty —
+# exactly the isatty() gate that makes agy go silent in a pipe (bug #76). If the
+# bridge gives it a working pseudo-terminal, we get the payload back; if the pty
+# machinery is broken on this platform, we get "".
+_STUB = textwrap.dedent(
+    """
+    import os, sys
+    if os.isatty(sys.stdout.fileno()):
+        sys.stdout.write("STUB_OK")
+        sys.stdout.flush()
+    """
+)
+
+
+def test_pty_mechanics_with_isatty_stub(tmp_path):
+    """Exercise the real pty path (ConPTY on Windows, os.openpty on POSIX).
+
+    This is the platform-verification test: it proves the bridge hands the
+    child a stdout that passes isatty(), and that we capture + clean the output
+    — without requiring agy to be installed or authenticated.
+    """
+    stub = tmp_path / "isatty_stub.py"
+    stub.write_text(_STUB)
+    out = bridge._pty_run([sys.executable, str(stub)], timeout=60)
+    assert "STUB_OK" in out
+
+
+def test_pty_returns_empty_when_child_emits_nothing(tmp_path):
+    stub = tmp_path / "silent_stub.py"
+    stub.write_text("import sys; sys.exit(0)")
+    out = bridge._pty_run([sys.executable, str(stub)], timeout=60)
+    assert out == ""
 
 
 # --- live smoke (skipped if agy not available) ----------------------------

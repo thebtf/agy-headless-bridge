@@ -124,7 +124,7 @@ class AgyNotFoundError(RuntimeError):
 # --- platform pty runners --------------------------------------------------
 
 
-def _run_windows(agy_path: str, prompt: str, timeout: float) -> str:
+def _run_windows(argv: list[str], timeout: float) -> str:
     try:
         from winpty import PtyProcess  # type: ignore
     except ImportError as exc:  # pragma: no cover - env-specific
@@ -133,7 +133,7 @@ def _run_windows(agy_path: str, prompt: str, timeout: float) -> str:
         ) from exc
 
     # Wide cols so agy does not hard-wrap; tall rows to avoid paging.
-    proc = PtyProcess.spawn([agy_path, "-p", prompt], dimensions=(50, 200))
+    proc = PtyProcess.spawn(argv, dimensions=(50, 200))
     chunks: list[str] = []
 
     def _reader() -> None:
@@ -156,12 +156,12 @@ def _run_windows(agy_path: str, prompt: str, timeout: float) -> str:
         except Exception:
             pass
         t.join(5)
-        raise TimeoutError(f"agy timed out after {timeout}s")
+        raise TimeoutError(f"process timed out after {timeout}s")
 
     return clean("".join(chunks))
 
 
-def _run_posix(agy_path: str, prompt: str, timeout: float) -> str:
+def _run_posix(argv: list[str], timeout: float) -> str:
     import pty
     import subprocess
 
@@ -170,7 +170,7 @@ def _run_posix(agy_path: str, prompt: str, timeout: float) -> str:
     env = {**os.environ, "COLUMNS": "200", "LINES": "50", "TERM": "xterm-256color"}
     try:
         proc = subprocess.Popen(
-            [agy_path, "-p", prompt],
+            argv,
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
@@ -186,7 +186,7 @@ def _run_posix(agy_path: str, prompt: str, timeout: float) -> str:
         while True:
             if time.monotonic() > deadline:
                 proc.kill()
-                raise TimeoutError(f"agy timed out after {timeout}s")
+                raise TimeoutError(f"process timed out after {timeout}s")
             try:
                 data = os.read(master_fd, 4096)
             except OSError:
@@ -211,6 +211,18 @@ def _run_posix(agy_path: str, prompt: str, timeout: float) -> str:
 # --- public API ------------------------------------------------------------
 
 
+def _pty_run(argv: list[str], timeout: float) -> str:
+    """Spawn argv attached to a fresh pty; return its cleaned stdout.
+
+    Platform-agnostic seam: `run()` calls this with the agy command, and the
+    test suite calls it with a stub command to exercise the real pty machinery
+    without needing `agy` installed.
+    """
+    if sys.platform == "win32":
+        return _run_windows(argv, timeout)
+    return _run_posix(argv, timeout)
+
+
 def run(prompt: str, timeout: float = DEFAULT_TIMEOUT, agy_path: str | None = None) -> str:
     """
     Run `agy -p <prompt>` through a fresh pty and return its cleaned stdout.
@@ -228,9 +240,7 @@ def run(prompt: str, timeout: float = DEFAULT_TIMEOUT, agy_path: str | None = No
             "https://antigravity.google/cli"
         )
 
-    if sys.platform == "win32":
-        return _run_windows(path, prompt, timeout)
-    return _run_posix(path, prompt, timeout)
+    return _pty_run([path, "-p", prompt], timeout)
 
 
 def main(argv: list[str] | None = None) -> int:
