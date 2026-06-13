@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Antigravity CLI (agy) install / auth help
+    url: https://antigravity.google/cli
+    about: "Problems installing or authenticating agy itself are upstream — this package only spawns the agy already on your machine."

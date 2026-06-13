@@ -1,0 +1,43 @@
+name: "Bug report (general)"
+description: "Something broke that isn't specifically the POSIX pty path."
+title: "<one-line summary>"
+labels: ["bug", "needs-triage"]
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: ["Windows", "Linux", "macOS"]
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      placeholder: "agy-headless-bridge x.y.z · Python x.y · agy x.y.z"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened vs. what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps / command to reproduce
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Full output / traceback
+      render: text
+  - type: checkboxes
+    id: sanity
+    attributes:
+      label: Sanity check
+      options:
+        - label: "`agy -p \"say hi\"` works in a real terminal (rules out agy/auth)"

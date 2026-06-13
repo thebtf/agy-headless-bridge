@@ -1,0 +1,75 @@
+name: "POSIX result / bug report (Linux · macOS)"
+description: "Report whether the stdlib pty path works on your Linux/macOS box — pass or fail."
+title: "[POSIX] <one-line summary>"
+labels: ["posix", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The Linux/macOS pty path is implemented but **not yet verified on real hardware**.
+        Both success and failure reports are valuable — thank you.
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - "✅ Works — got clean output"
+        - "❌ Empty output"
+        - "❌ Crash / exception"
+        - "❌ Garbled / partial output"
+        - "⚠️ Other"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS + version
+      placeholder: "e.g. Ubuntu 24.04 / macOS 14.5 (output of `uname -a`)"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "output of `python --version`"
+    validations:
+      required: true
+  - type: input
+    id: agy
+    attributes:
+      label: agy version
+      placeholder: "output of `agy --version`"
+    validations:
+      required: true
+  - type: dropdown
+    id: agy_terminal
+    attributes:
+      label: Does `agy -p \"say hi\"` work in a REAL terminal?
+      description: "Rules out agy/auth problems vs. a bridge problem."
+      options:
+        - "Yes — prints a reply"
+        - "No — also empty/errors in a real terminal"
+        - "Haven't checked"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command you ran
+      render: shell
+      placeholder: "e.g. python -m agy_headless_bridge \"reply with exactly: OK\""
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Full output (stdout + stderr)
+      description: "Paste everything. For a crash, include the full traceback."
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: install
+    attributes:
+      label: How did you install?
+      placeholder: "pip install agy-headless-bridge  /  pip install -e .  (and version)"
