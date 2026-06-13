@@ -139,27 +139,26 @@ Hi! How can I help?</pre>
 
     <div class="diagram">
       <pre class="mermaid">
-flowchart LR
-    A["Caller<br/>(Claude Code · MCP client<br/>· subprocess · CI)"] -->|"prompt"| B{{"agy_headless_bridge.run()"}}
+flowchart TD
+    A["Caller — non-TTY<br/>Claude Code · MCP · subprocess · CI"] -->|"prompt"| B{{"run(prompt)"}}
     B --> C["find_agy()<br/>$AGY_PATH → PATH → OS defaults"]
-    C --> D{"sys.platform"}
-    D -->|win32| E["pywinpty<br/>PtyProcess.spawn"]
-    D -->|posix| F["stdlib pty<br/>os.openpty + Popen"]
-    E --> G(["fresh ConPTY"])
-    F --> H(["fresh /dev/pts"])
-    G --> I["agy -p prompt<br/>sees a REAL tty → emits"]
-    H --> I
-    I -->|"raw bytes + ANSI/TUI chrome"| J["clean()<br/>strip CSI/OSC · collapse \\r repaints · drop spinner glyphs"]
-    J -->|"clean text"| A
+    C --> D{"sys.platform?"}
+    D -->|"win32"| E["pywinpty<br/>PtyProcess.spawn"]
+    D -->|"posix"| F["stdlib pty<br/>os.openpty + Popen"]
+    E --> G(["fresh pseudo-terminal"])
+    F --> G
+    G --> H["agy -p prompt<br/>isatty == True → emits"]
+    H -->|"raw bytes + ANSI/TUI chrome"| I["clean()<br/>strip CSI/OSC · collapse \\r repaints · drop spinner glyphs"]
+    I -->|"clean text"| A
 
     classDef br fill:#1b1740,stroke:#7c5cff,color:#e7e9ef;
     classDef pty fill:#0c2730,stroke:#22d3ee,color:#e7e9ef;
     classDef agy fill:#0f2a1e,stroke:#34d399,color:#e7e9ef;
-    class B,C,J br;
-    class E,F,G,H pty;
-    class I agy;
+    class B,C,I br;
+    class E,F,G pty;
+    class H agy;
       </pre>
-      <div class="cap">Data flow — same path on every platform, only the pty allocator differs.</div>
+      <div class="cap">Vertical data flow — same path on every platform, only the pty allocator differs.</div>
     </div>
 
     <h3>The tty handshake, step by step</h3>
@@ -201,6 +200,45 @@ sequenceDiagram
       </tbody>
     </table>
     <div class="note">⚠️ The POSIX path is implemented but not yet run on a real Linux/macOS box. Smoke-test it before relying on it — PRs/reports welcome.</div>
+  </div>
+</section>
+
+<section id="api">
+  <div class="wrap">
+    <div class="eyebrow">Functionality</div>
+    <h2>The API &amp; the output pipeline</h2>
+    <p class="lead">One core function, three entry points around it. Everything routes through <code>run()</code>.</p>
+
+    <h3>Core contract</h3>
+    <pre><span class="k">run</span>(prompt: str, timeout: float = <span class="s">180</span>, agy_path: str | None = <span class="s">None</span>) -&gt; str</pre>
+    <table>
+      <thead><tr><th>Raises / returns</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td><code>AgyNotFoundError</code></td><td>binary not found via <code>$AGY_PATH</code> → <code>PATH</code> → defaults</td></tr>
+        <tr><td><code>TimeoutError</code></td><td>agy exceeds <code>AGY_BRIDGE_TIMEOUT</code> — the process is killed, not left hanging</td></tr>
+        <tr><td><code>ValueError</code></td><td>empty / whitespace prompt</td></tr>
+        <tr><td><code>""</code> (empty str)</td><td>agy genuinely produced no output</td></tr>
+        <tr><td>clean <code>str</code></td><td>success</td></tr>
+      </tbody>
+    </table>
+
+    <h3>What <code>clean()</code> strips</h3>
+    <p class="lead" style="font-size:15.5px"><code>agy</code>'s pty output is a TUI stream, not plain text. <code>clean()</code> turns it back into the answer:</p>
+    <div class="grid">
+      <div class="feat"><div class="ic">🎨</div><h4>ANSI escapes</h4><p>CSI &amp; OSC sequences — colors, cursor moves, window-title sets.</p></div>
+      <div class="feat"><div class="ic">🔁</div><h4>\r repaints</h4><p>A spinner overwrites one line many times; only the final paint survives.</p></div>
+      <div class="feat"><div class="ic">📦</div><h4>TUI chrome</h4><p>Box-drawing &amp; spinner glyphs <code>╭─╮ │ ⠋⠙⠹</code> are dropped.</p></div>
+    </div>
+
+    <h3>Three entry points</h3>
+    <table>
+      <thead><tr><th>Entry point</th><th>Invoke</th><th>Use for</th></tr></thead>
+      <tbody>
+        <tr><td>Library</td><td><code>from agy_headless_bridge import run</code></td><td>embedding agy in Python</td></tr>
+        <tr><td>CLI</td><td><code>agy-bridge "prompt"</code></td><td>shell scripts, quick calls</td></tr>
+        <tr><td>MCP server</td><td><code>python -m agy_headless_bridge.mcp_server</code></td><td>agents calling agy as a tool (<code>agy_ask</code> / <code>agy_research</code>)</td></tr>
+      </tbody>
+    </table>
   </div>
 </section>
 
