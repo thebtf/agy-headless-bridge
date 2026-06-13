@@ -10,6 +10,7 @@ Codename **PtyGravity** · pty + antiGravity
 
 [![PyPI](https://img.shields.io/pypi/v/agy-headless-bridge.svg?color=7c5cff)](https://pypi.org/project/agy-headless-bridge/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/agy-headless-bridge.svg?color=22d3ee)](https://pypi.org/project/agy-headless-bridge/)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-listed-7c5cff)](https://registry.modelcontextprotocol.io/v0/servers?search=agy-headless-bridge)
 [![tests](https://github.com/rhishi99/agy-headless-bridge/actions/workflows/test.yml/badge.svg)](https://github.com/rhishi99/agy-headless-bridge/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-7c5cff.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-22d3ee.svg)](https://www.python.org)

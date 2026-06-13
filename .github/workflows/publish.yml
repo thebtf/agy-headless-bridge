@@ -1,9 +1,12 @@
-name: publish
+name: publish to PyPI
 
-# Publishes when you create a GitHub Release (recommended: tag it v1.0.1 etc.):
-#   1. build + publish to PyPI via Trusted Publishing (OIDC)
-#   2. publish server.json to the official MCP Registry via GitHub OIDC
-# No API tokens are stored in this repo — both steps use OIDC.
+# Publishes to PyPI when you create a GitHub Release (tag it v1.0.x).
+# Uses PyPI Trusted Publishing (OIDC) — no API token is stored in this repo.
+#
+# The MCP Registry listing is published separately by registry-publish.yml
+# (manual workflow_dispatch). It's decoupled on purpose: the registry only
+# needs re-publishing when server.json changes, not on every PyPI release —
+# and re-publishing an unchanged version would error.
 on:
   release:
     types: [published]
@@ -46,23 +49,3 @@ jobs:
           path: dist/
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
-  registry:
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write          # required for MCP Registry GitHub OIDC
-      contents: read
-    steps:
-      - uses: actions/checkout@v4   # needs server.json
-      - name: Wait for PyPI to expose the new description
-        # The registry verifies ownership via the mcp-name token in the live
-        # PyPI description; give the just-published release time to propagate.
-        run: sleep 90
-      - name: Install mcp-publisher
-        run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
-      - name: Authenticate (GitHub OIDC)
-        run: ./mcp-publisher login github-oidc
-      - name: Publish to MCP Registry
-        run: ./mcp-publisher publish

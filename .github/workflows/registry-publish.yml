@@ -2,8 +2,11 @@ name: publish to MCP Registry
 
 # Standalone, re-runnable publish of server.json to the official MCP Registry
 # via GitHub OIDC (no stored token). Checks out the latest default branch, so
-# server.json edits land without cutting a new release. The PyPI package +
-# mcp-name ownership token must already be live.
+# server.json edits land without cutting a new release.
+#
+# Before running: bump the "version" in server.json (the registry rejects a
+# re-publish of an already-listed version), and make sure the matching PyPI
+# release + its mcp-name ownership token are already live.
 on:
   workflow_dispatch:
 
