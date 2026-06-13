@@ -99,7 +99,7 @@ flowchart TD
 | Platform | pty backend | Status |
 |---|---|---|
 | **Windows** | ConPTY via [`pywinpty`] (`PtyProcess`) | ✅ verified (agy 1.0.6) |
-| **Linux / macOS** | stdlib [`pty`] (`os.openpty` + `subprocess.Popen`) | 🧪 implemented, **untested** — reports welcome |
+| **Linux / macOS** | stdlib [`pty`] (`os.openpty` + `subprocess.Popen`) | 🧪 implemented, **untested** — [report results / issues here](https://github.com/rhishi99/agy-headless-bridge/issues/new) (include OS, Python + agy version, and full stderr) |
 
 > **Why not just the existing `agy` Claude Code plugins?** They wrap `agy` for
 > *triggering* (slash commands, model selection) but still call `agy -p`
@@ -128,6 +128,8 @@ Before installing this bridge you need:
 ---
 
 ## Install
+
+Requires **Python 3.9+**.
 
 ```bash
 pip install agy-headless-bridge          # pywinpty auto-installs on Windows only
@@ -177,9 +179,29 @@ claude mcp add --transport stdio antigravity -- \
     python -m agy_headless_bridge.mcp_server
 ```
 
-Exposes **`agy_ask(prompt)`** and **`agy_research(query)`**. The server speaks
-JSON-RPC stdio directly (no MCP SDK dependency) and routes every call through
-the pty bridge.
+The server speaks JSON-RPC stdio directly (no MCP SDK dependency) and routes
+every call through the pty bridge.
+
+**Tool schema** (what an agent — or you, integrating manually — sees):
+
+| Tool | Argument | Type | Required | Description |
+|---|---|---|---|---|
+| `agy_ask` | `prompt` | string | ✅ | one-shot prompt sent to agy |
+| `agy_research` | `query` | string | ✅ | wrapped as a deep-research prompt for agy |
+
+**Response shape** — a standard MCP `tools/call` result; the answer is the text
+content:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": { "content": [ { "type": "text", "text": "<agy's cleaned answer>" } ] }
+}
+```
+
+On failure the `text` is an `[agy-mcp] ERROR: ...` string (agy missing, timeout,
+etc.) rather than a JSON-RPC error, so the agent always gets a readable reply.
 
 ---
 
@@ -257,7 +279,50 @@ escapes** (CSI/OSC — colors, cursor moves), **`\r` repaints** (a spinner
 overwrites one line; only the final paint is kept), and **box-drawing / spinner
 glyphs** (`╭─╮ │ ⠋⠙⠹`) — leaving just the model's answer.
 
+What comes off the pty vs. what you get back:
+
+```text
+RAW (off the pty)                          CLEANED (returned to you)
+─────────────────────────────────────     ─────────────────────────
+⠋ thinking…\r⠙ thinking…\r\x1b[2K          A closure is a function that
+\x1b[32m╭─────────────╮\x1b[0m              captures variables from the
+\x1b[32m│\x1b[0m A closure is a function     scope where it was defined.
+that captures variables from the
+scope where it was defined.
+\x1b[32m╰─────────────╯\x1b[0m
+```
+
 ---
+
+## Troubleshooting / FAQ
+
+**`pip install` fails on Windows building `pywinpty`** — `pywinpty` is a native
+extension. If pip tries to build from source and errors with a compiler/`cl.exe`
+message, install the **Microsoft C++ Build Tools** (or use a Python where a
+prebuilt `pywinpty` wheel exists — recent CPython on Windows has them). Upgrade
+pip first: `python -m pip install -U pip`.
+
+**`AgyNotFoundError`** — the bridge can't find `agy`. Set `AGY_PATH` to the
+absolute path of the binary, or make sure `agy` is on your `PATH`
+(`agy --version` should work in your shell).
+
+**Empty string returned** — agy produced no output. Confirm it works in a real
+terminal first: `agy -p "say hi"`. If that's also empty, the problem is agy/auth,
+not the bridge. Re-authenticate (`agy` interactively) or check
+`ANTIGRAVITY_API_KEY`.
+
+**`TimeoutError`** — the call exceeded `AGY_BRIDGE_TIMEOUT` (default 180s). Raise
+it for long prompts: `AGY_BRIDGE_TIMEOUT=600 agy-bridge "..."` or
+`run(prompt, timeout=600)`.
+
+**Pseudo-terminal allocation fails** — rare. On Windows it means `pywinpty`
+isn't importable (reinstall it). On POSIX it means the system is out of pty
+slots or `pty.openpty()` is denied (containers with no `/dev/pts`); run with a
+real pty available.
+
+**Garbled / partial output** — open an
+[issue](https://github.com/rhishi99/agy-headless-bridge/issues/new) with the OS,
+Python + agy version, and the raw output; `clean()` may need another glyph rule.
 
 ## Development & CI
 

@@ -255,6 +255,45 @@ sequenceDiagram
       <div class="feat"><div class="ic">📦</div><h4>TUI chrome</h4><p>Box-drawing &amp; spinner glyphs <code>╭─╮ │ ⠋⠙⠹</code> are dropped.</p></div>
     </div>
 
+    <h3>Raw off the pty vs. what you get back</h3>
+    <div class="ba">
+      <div class="panel bad">
+        <h4><span class="pill b">RAW</span> off the pty</h4>
+        <pre>⠋ thinking…\r⠙ thinking…\r<span class="o">\x1b[2K</span>
+<span class="o">\x1b[32m</span>╭─────────────╮<span class="o">\x1b[0m</span>
+<span class="o">\x1b[32m</span>│<span class="o">\x1b[0m</span> A closure is a function
+that captures variables from
+the scope where it was defined.
+<span class="o">\x1b[32m</span>╰─────────────╯<span class="o">\x1b[0m</span></pre>
+      </div>
+      <div class="panel good">
+        <h4><span class="pill g">CLEANED</span> returned to you</h4>
+        <pre>A closure is a function that
+captures variables from the
+scope where it was defined.</pre>
+      </div>
+    </div>
+
+    <h3>MCP response shape</h3>
+    <pre>{
+  <span class="s">"jsonrpc"</span>: <span class="s">"2.0"</span>, <span class="s">"id"</span>: 2,
+  <span class="s">"result"</span>: { <span class="s">"content"</span>: [ { <span class="s">"type"</span>: <span class="s">"text"</span>, <span class="s">"text"</span>: <span class="s">"&lt;agy's cleaned answer&gt;"</span> } ] }
+}</pre>
+    <p style="color:var(--mut);font-size:14px">Both tools take one required <code>string</code> arg — <code>agy_ask(prompt)</code>, <code>agy_research(query)</code>. On failure the <code>text</code> is an <code>[agy-mcp] ERROR: …</code> string, not a JSON-RPC error, so the agent always gets a readable reply.</p>
+
+    <h3>Troubleshooting</h3>
+    <table>
+      <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td><code>pip install</code> fails building <code>pywinpty</code> (Windows)</td><td>Install <strong>MS C++ Build Tools</strong>, or use a CPython with a prebuilt wheel; <code>python -m pip install -U pip</code> first.</td></tr>
+        <tr><td><code>AgyNotFoundError</code></td><td>Set <code>AGY_PATH</code>, or ensure <code>agy --version</code> works in your shell.</td></tr>
+        <tr><td>Empty string returned</td><td>Confirm <code>agy -p "say hi"</code> works in a real terminal — if not, it's agy/auth, not the bridge.</td></tr>
+        <tr><td><code>TimeoutError</code></td><td>Raise <code>AGY_BRIDGE_TIMEOUT</code> (e.g. <code>600</code>) or pass <code>timeout=</code> to <code>run()</code>.</td></tr>
+        <tr><td>pty allocation fails</td><td>Windows: reinstall <code>pywinpty</code>. POSIX: needs a real <code>/dev/pts</code> (some minimal containers lack it).</td></tr>
+        <tr><td>Garbled output</td><td><a href="https://github.com/rhishi99/agy-headless-bridge/issues/new">Open an issue</a> with OS + versions + raw output.</td></tr>
+      </tbody>
+    </table>
+
     <h3>Three entry points</h3>
     <table>
       <thead><tr><th>Entry point</th><th>Invoke</th><th>Use for</th></tr></thead>
