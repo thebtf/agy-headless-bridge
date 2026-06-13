@@ -11,8 +11,8 @@ Ships two things:
 2. **An MCP server** (`agy_headless_bridge.mcp_server`) — exposes `agy` as
    `agy_ask` / `agy_research` tools to any MCP client.
 
-> 📖 **[Architecture & docs page →](docs/index.html)** (open locally, or enable
-> GitHub Pages on `/docs` for a hosted version). Codename: **PtyGravity**.
+> 📖 **[Architecture & docs page → rhishi99.github.io/agy-headless-bridge](https://rhishi99.github.io/agy-headless-bridge/)**
+> (source: [`docs/index.html`](docs/index.html)). Codename: **PtyGravity**.
 
 ---
 
