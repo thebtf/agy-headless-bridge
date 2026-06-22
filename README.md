@@ -195,6 +195,11 @@ claude mcp add --transport stdio antigravity -- \
     python -m agy_headless_bridge.mcp_server
 ```
 
+> **Windows:** use `py -3.11` (the [Python Launcher]) instead of `python` in the
+> command above. Bare `python` can resolve to the wrong interpreter or the
+> Windows Store stub, which surfaces as an `-32000` MCP connection error. See
+> [Troubleshooting](#troubleshooting--faq).
+
 The server speaks JSON-RPC stdio directly (no MCP SDK dependency) and routes
 every call through the pty bridge.
 
@@ -242,6 +247,9 @@ Register the MCP server, then prompt Claude to use it:
 claude mcp add --transport stdio antigravity -- \
     python -m agy_headless_bridge.mcp_server
 ```
+
+> **Windows:** swap `python` for `py -3.11` here too — see the note above and
+> [Troubleshooting](#troubleshooting--faq).
 
 > **Prompt to Claude Code:**
 > *"Use the `agy_ask` tool to ask Antigravity to review this function for edge
@@ -318,6 +326,15 @@ message, install the **Microsoft C++ Build Tools** (or use a Python where a
 prebuilt `pywinpty` wheel exists — recent CPython on Windows has them). Upgrade
 pip first: `python -m pip install -U pip`.
 
+**`-32000` MCP connection error on Windows (interpreter mismatch)** — bare
+`python` in the `claude mcp add` command can resolve to the wrong interpreter or
+the Windows Store stub, so the spawned server can't import the package and the
+connection fails. Use the [Python Launcher] instead — register the server with
+`py -3.11` (matching the Python where you installed the package) in place of
+`python`. To confirm where the package actually landed, run
+`pip show agy-headless-bridge` and check the `Location:` field; if it points to a
+different Python than Claude Code spawns, that mismatch is the cause.
+
 **`AgyNotFoundError`** — the bridge can't find `agy`. Set `AGY_PATH` to the
 absolute path of the binary, or make sure `agy` is on your `PATH`
 (`agy --version` should work in your shell).
@@ -373,3 +390,4 @@ Windows + Linux across Python 3.9 and 3.12.
 [#76]: https://antigravity.google/cli
 [`pywinpty`]: https://github.com/andfoy/pywinpty
 [`pty`]: https://docs.python.org/3/library/pty.html
+[Python Launcher]: https://docs.python.org/3/using/windows.html#python-launcher-for-windows
