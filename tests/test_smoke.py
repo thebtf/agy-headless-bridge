@@ -58,6 +58,11 @@ def test_run_raises_when_agy_missing(monkeypatch):
         bridge.run("hello")
 
 
+def test_run_rejects_unknown_via():
+    with pytest.raises(ValueError):
+        bridge.run("hello", via="carrier-pigeon")
+
+
 # --- pty mechanics (no agy needed; runs on every CI runner) ---------------
 
 # A stand-in for `agy`: it prints its payload ONLY when stdout is a real tty —
@@ -103,3 +108,34 @@ def test_pty_returns_empty_when_child_emits_nothing(tmp_path):
 def test_live_agy_roundtrip():
     out = bridge.run("reply with exactly: SMOKE_OK", timeout=120)
     assert "SMOKE_OK" in out
+
+
+@pytest.mark.skipif(
+    bridge.find_agy() is None,
+    reason="agy binary not installed/authenticated; skipping live smoke",
+)
+def test_live_stdin_large_prompt_clears_cmdline_cap():
+    """Regression for the WinptyError-206 cmdline cap.
+
+    A prompt of ~45KB exceeds the Windows CreateProcess command-line limit
+    (~32767 chars), so the legacy argv path (`agy -p <prompt>`) raised
+    WinptyError 206 ("filename too long"). The stdin path must deliver the
+    same prompt without that error AND agy must actually read the body — we
+    bury a unique fact and ask agy to retrieve it.
+
+    Sized ~45KB on purpose: large enough to be over the cmdline cap, small
+    enough to stay under agy/Gemini's own very-long-input truncation (which
+    starts dropping the trailing instruction somewhere past ~50KB).
+    """
+    rows = [
+        f"Registry row {i}: the secret code for studio S{i} is {1000 + i}."
+        for i in range(700)
+    ]
+    rows.append(
+        "TASK: From the rows above, what is the secret code for studio S7? "
+        "Answer with only that number, nothing else."
+    )
+    prompt = "\n".join(rows)
+    assert len(prompt) > 32767  # would overflow the argv cmdline cap
+    out = bridge.run(prompt, timeout=240, via="stdin")
+    assert "1007" in out  # 1000 + 7

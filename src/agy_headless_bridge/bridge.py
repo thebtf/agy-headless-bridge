@@ -25,6 +25,17 @@ ANSI / TUI control noise, and return the clean model response.
               own a tty — so this works from any subprocess.
   * POSIX   : the stdlib `pty` module (`os.openpty` + `subprocess.Popen`).
 
+LARGE PROMPTS (cmdline cap)
+---------------------------
+Passing the prompt as a command-line argument (`agy -p <prompt>`) caps the
+prompt at the OS command-line limit — on Windows, CreateProcess rejects a
+command line over ~32 767 chars with WinptyError 206 ("filename too long").
+Automated callers (e.g. an agent host injecting a full transcript) routinely
+exceed that. The fix feeds the prompt to `agy -p -` through STDIN instead:
+stdin is an unbounded stream, while stdout still lives in the pty so the
+`isatty()` gate is satisfied. `run()` uses this path by default; the legacy
+argv path remains available via `run(..., via="argv")` and `_pty_run`.
+
 Public API
 ----------
     from agy_headless_bridge.bridge import run
@@ -124,16 +135,24 @@ class AgyNotFoundError(RuntimeError):
 # --- platform pty runners --------------------------------------------------
 
 
-def _run_windows(argv: list[str], timeout: float) -> str:
+def _import_winpty():  # pragma: no cover - env-specific
     try:
         from winpty import PtyProcess  # type: ignore
-    except ImportError as exc:  # pragma: no cover - env-specific
+
+        return PtyProcess
+    except ImportError as exc:
         raise RuntimeError(
             "pywinpty is required on Windows. Install: pip install pywinpty"
         ) from exc
 
-    # Wide cols so agy does not hard-wrap; tall rows to avoid paging.
-    proc = PtyProcess.spawn(argv, dimensions=(50, 200))
+
+def _drain_winpty(proc, timeout: float) -> str:
+    """Pump a spawned pywinpty PtyProcess to EOF (or timeout) and clean it.
+
+    Shared by the legacy argv runner (`_run_windows`) and the stdin file-pipe
+    runner (`_run_windows_stdin`): both end up with a `PtyProcess` whose master
+    must be drained on a watchdog thread so a hung child cannot block forever.
+    """
     chunks: list[str] = []
 
     def _reader() -> None:
@@ -159,6 +178,13 @@ def _run_windows(argv: list[str], timeout: float) -> str:
         raise TimeoutError(f"process timed out after {timeout}s")
 
     return clean("".join(chunks))
+
+
+def _run_windows(argv: list[str], timeout: float) -> str:
+    PtyProcess = _import_winpty()
+    # Wide cols so agy does not hard-wrap; tall rows to avoid paging.
+    proc = PtyProcess.spawn(argv, dimensions=(50, 200))
+    return _drain_winpty(proc, timeout)
 
 
 def _run_posix(argv: list[str], timeout: float) -> str:
@@ -208,30 +234,158 @@ def _run_posix(argv: list[str], timeout: float) -> str:
     return clean(raw)
 
 
+# --- stdin (file-pipe) pty runners -----------------------------------------
+#
+# The argv runners above cap the prompt at the OS command-line limit. These
+# runners instead deliver the prompt to `agy -p -` through STDIN (an unbounded
+# stream) while keeping stdout in the pty so the isatty() gate still fires.
+
+
+def _run_posix_stdin(agy: str, prompt: str, timeout: float) -> str:
+    import pty
+    import subprocess
+
+    # Prompt goes to agy via a plain pipe (no length cap); stdout/stderr live
+    # in the pty so agy's isatty() check passes and it emits its answer.
+    stdin_r, stdin_w = os.pipe()
+    master_fd, slave_fd = pty.openpty()
+    env = {**os.environ, "COLUMNS": "200", "LINES": "50", "TERM": "xterm-256color"}
+    try:
+        proc = subprocess.Popen(
+            [agy, "-p", "-"],
+            stdin=stdin_r,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            close_fds=True,
+            env=env,
+        )
+    finally:
+        os.close(slave_fd)
+        os.close(stdin_r)
+
+    # Feed the prompt on a thread so a large prompt can't deadlock against a
+    # pty whose read buffer we are not yet draining.
+    def _feed() -> None:
+        try:
+            os.write(stdin_w, prompt.encode("utf-8"))
+        except OSError:
+            pass
+        finally:
+            try:
+                os.close(stdin_w)
+            except OSError:
+                pass
+
+    feeder = threading.Thread(target=_feed, daemon=True)
+    feeder.start()
+
+    chunks: list[bytes] = []
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            if time.monotonic() > deadline:
+                proc.kill()
+                raise TimeoutError(f"process timed out after {timeout}s")
+            try:
+                data = os.read(master_fd, 4096)
+            except OSError:
+                break
+            if not data:
+                break
+            chunks.append(data)
+    finally:
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+
+    raw = b"".join(chunks).decode("utf-8", errors="replace")
+    return clean(raw)
+
+
+def _run_windows_stdin(agy: str, prompt: str, timeout: float) -> str:
+    # pywinpty puts stdin AND stdout on the pty, so we cannot hand agy a
+    # separate stdin pipe directly. Instead drive it through a throwaway cmd
+    # batch that pipes a temp file into `agy -p -`: `type` supplies stdin from
+    # the file (no cmdline cap), the pipe's right side inherits the pty for
+    # stdout (isatty() passes). This is the proven Windows path.
+    import tempfile
+
+    PtyProcess = _import_winpty()
+    tmpdir = tempfile.mkdtemp(prefix="agy-bridge-")
+    prompt_file = os.path.join(tmpdir, "prompt.txt")
+    bat_file = os.path.join(tmpdir, "run.bat")
+    try:
+        with open(prompt_file, "w", encoding="utf-8") as fh:
+            fh.write(prompt)
+        # %~1 = prompt file. agy path is baked in (quoted) to dodge nested cmd
+        # quoting around the pipe.
+        with open(bat_file, "w", encoding="utf-8") as fh:
+            fh.write("@echo off\r\n")
+            fh.write('chcp 65001 >nul\r\n')  # UTF-8 so a non-ASCII prompt survives
+            fh.write(f'type "%~1" | "{agy}" -p -\r\n')
+
+        proc = PtyProcess.spawn([bat_file, prompt_file], dimensions=(50, 200))
+        return _drain_winpty(proc, timeout)
+    finally:
+        for p in (prompt_file, bat_file):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        try:
+            os.rmdir(tmpdir)
+        except OSError:
+            pass
+
+
+def _pty_run_stdin(agy: str, prompt: str, timeout: float) -> str:
+    """Run `agy -p -` in a fresh pty, feeding the prompt via stdin."""
+    if sys.platform == "win32":
+        return _run_windows_stdin(agy, prompt, timeout)
+    return _run_posix_stdin(agy, prompt, timeout)
+
+
 # --- public API ------------------------------------------------------------
 
 
 def _pty_run(argv: list[str], timeout: float) -> str:
     """Spawn argv attached to a fresh pty; return its cleaned stdout.
 
-    Platform-agnostic seam: `run()` calls this with the agy command, and the
-    test suite calls it with a stub command to exercise the real pty machinery
-    without needing `agy` installed.
+    Platform-agnostic seam: the legacy argv path and the test suite call this
+    with an explicit command to exercise the real pty machinery without needing
+    `agy` installed.
     """
     if sys.platform == "win32":
         return _run_windows(argv, timeout)
     return _run_posix(argv, timeout)
 
 
-def run(prompt: str, timeout: float = DEFAULT_TIMEOUT, agy_path: str | None = None) -> str:
+def run(
+    prompt: str,
+    timeout: float = DEFAULT_TIMEOUT,
+    agy_path: str | None = None,
+    via: str = "stdin",
+) -> str:
     """
-    Run `agy -p <prompt>` through a fresh pty and return its cleaned stdout.
+    Run `agy` through a fresh pty and return its cleaned stdout.
+
+    The prompt is delivered to `agy -p -` via STDIN by default (`via="stdin"`),
+    which has no length limit — required for large prompts (e.g. an automated
+    host injecting a full transcript) that would otherwise blow the OS
+    command-line cap. Pass `via="argv"` for the legacy `agy -p <prompt>` path.
 
     Raises AgyNotFoundError if `agy` can't be located, TimeoutError on timeout.
     Returns "" if agy genuinely emitted nothing.
     """
     if not prompt or not prompt.strip():
         raise ValueError("prompt must be a non-empty string")
+    if via not in ("stdin", "argv"):
+        raise ValueError("via must be 'stdin' or 'argv'")
 
     path = agy_path or find_agy()
     if not path:
@@ -240,7 +394,9 @@ def run(prompt: str, timeout: float = DEFAULT_TIMEOUT, agy_path: str | None = No
             "https://antigravity.google/cli"
         )
 
-    return _pty_run([path, "-p", prompt], timeout)
+    if via == "argv":
+        return _pty_run([path, "-p", prompt], timeout)
+    return _pty_run_stdin(path, prompt, timeout)
 
 
 def main(argv: list[str] | None = None) -> int:
